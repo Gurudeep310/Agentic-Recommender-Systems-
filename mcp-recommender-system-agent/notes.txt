@@ -1,0 +1,36 @@
+Hello world
+An MCP (Model Context Protocol) server is a software component that acts as a bridge between an AI model (like a large language model or LLM) and external tools or data sources. It facilitates AI models to access and utilize various resources by providing a standardized way for the model to request and receive information or perform actions. 
+Here's a more detailed breakdown:
+Key Features and Functions:
+Protocol for AI Interaction:
+MCP defines a standardized way for AI models to interact with external tools and data sources, enabling them to access a wide range of capabilities. 
+Tool Exposure:
+MCP servers expose specific functionalities, such as accessing files, calling APIs, or querying databases, making them accessible to AI models. 
+Context Handling:
+They handle the context of the AI model's request, including previous interactions, to ensure accurate and relevant results. 
+Secure Access:
+MCP servers can implement authentication and authorization mechanisms to ensure secure access to data and tools. 
+Server-Side Implementation:
+MCP servers are the server-side components of the MCP protocol, responsible for implementing the server-side functionalities and handling requests from clients. 
+Example Use Cases:
+Accessing Files:
+An AI model might request the content of a file, and an MCP server would fetch the file and return the contents to the model. 
+Calling APIs:
+An AI model could request that a specific API be called, and the MCP server would execute the API call and return the results. 
+Querying Databases:
+An AI model might need to query a database for information, and the MCP server would handle the database query and return the results. 
+Interacting with External Services:
+An AI model could be used to interact with services like email, social media, or other external APIs. 
+Benefits of Using MCP Servers: 
+Standardization:
+MCP provides a standardized way for AI models to interact with external resources, making it easier to build and maintain AI-powered applications. 
+Flexibility:
+MCP servers can be configured to expose a wide range of tools and capabilities, allowing AI models to access a variety of resources. 
+Security:
+MCP servers can implement security mechanisms to ensure secure access to data and tools. 
+Integration:
+MCP enables seamless integration between AI models and external tools and data sources.
+uv 0.7.10 (1e5120e15 2025-06-03)
+uv add mcp python-dotenv google-genai
+google-genai==1.19.0
+websockets==15.0.1
