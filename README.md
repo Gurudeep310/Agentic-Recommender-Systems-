@@ -96,6 +96,7 @@ Folder 1
 ## 🛠️ Technologies
 
 - Python 3.8+
+- Model Context Protocol (MCP)
 - PyTorch, HuggingFace Transformers
 - Docker
 - Google Sheets API
