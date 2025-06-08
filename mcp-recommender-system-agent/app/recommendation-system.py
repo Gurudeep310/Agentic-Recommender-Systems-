@@ -33,6 +33,12 @@ print("Loaded the Model for Similarity Search")
 def get_similarity_search_utilities() -> str:
     return "Similarity Search Utilities"
 
+def to_optional_float(val):
+    return float(val) if val not in ("", None) else 0
+
+def to_optional_int(val):
+    return int(val) if val not in ("", None) else 0
+
 # Tool Working
 @mcp.tool()
 def hello_world() -> str:
@@ -54,43 +60,48 @@ def generate_and_store_embeddings_for_docs() -> str:
         str: A message indicating how many documents were processed
     
     '''
-    google_sheet_utilities = GoogleSheetUtils(SERVICE_ACCOUNT_FILE_PATH, SPREADSHEET_ID, SHEET_NAME)
-    
-    df = google_sheet_utilities.read_range(range_name = RANGE, as_dataframe = True)
-    print(df.columns)
-    print(df.shape)
-    # Check if dataframe is empty
-    if df.empty:
-        return "No documents found"
+    try:
+        google_sheet_utilities = GoogleSheetUtils(SERVICE_ACCOUNT_FILE_PATH, SPREADSHEET_ID, SHEET_NAME)
+        
+        df = google_sheet_utilities.read_range(range_name = RANGE, as_dataframe = True)
+        print(df.columns)
+        print(df.shape)
+        # Check if dataframe is empty
+        if df.empty:
+            return "No documents found"
 
 
-    # # Only process rows that are missing embeddings or have empty ones
-    df_to_embed = df[df['Embeddings'] == "-"]
-    print(df_to_embed.shape)
-    
+        # # Only process rows that are missing embeddings or have empty ones
+        df_to_embed = df[df['Embeddings'] == "-"]
+        print(df_to_embed.shape)
+        
 
-    # if df_to_embed.empty:
-    #     return "All documents already have embeddings"
+        # if df_to_embed.empty:
+        #     return "All documents already have embeddings"
 
-    for _, row in df_to_embed.iterrows():
-        try:
-            row_json = row_to_json(row)
-            # TODO: NEED TO REMOVE UNNECESSARY FIELDS FROM THE ROW JSON
+        for _, row in df_to_embed.iterrows():
+            try:
+                row_json = row_to_json(row)
+                # TODO: NEED TO REMOVE UNNECESSARY FIELDS FROM THE ROW JSON
 
-            embedding = similarity_search_utilities.generate_embedding(row_json)
-            # print("embedding: ", embedding)
-            if embedding is not None and len(embedding) > 0:
-                embedding_list = embedding.tolist()
-                google_sheet_utilities.update_cell_by_id(
-                    id_value=row['ID'],
-                    target_column="Embeddings",
-                    new_value=embedding_list
-                )
-        except Exception as e:
-            # Log the error or handle it accordingly
-            print(f"Failed to process ID {row['ID']}: {e}")
+                embedding = similarity_search_utilities.generate_embedding(row_json)
+                # print("embedding: ", embedding)
+                if embedding is not None and len(embedding) > 0:
+                    embedding_list = embedding.tolist()
+                    google_sheet_utilities.update_cell_by_id(
+                        id_value=row['ID'],
+                        target_column="Embeddings",
+                        new_value=embedding_list
+                    )
+            except Exception as e:
+                # Log the error or handle it accordingly
+                print(f"Failed to process ID {row['ID']}: {e}")
 
-    return f"Processed {len(df_to_embed)} documents and stored embeddings"
+        return f"Processed {len(df_to_embed)} documents and stored embeddings"
+    except Exception as e:
+        print(e)
+        print(traceback.print_exc())
+        return "Error: " + str(e) + "TRACEBACK: " + traceback.print_exc()
 
 # Tool Working
 @mcp.tool()
@@ -136,10 +147,10 @@ def get_details_of_movie(user_query: str) -> str:
 
         # If not, then search the web for the details of the movie and return the details to the user. If the results are relevant, then return the details of the movie. If the user wants to add the details to the database, then prompt the user to add the details to the database. If the user wants to add the details to the database, then prompt the user to add the details to the database.
         return prompt
-    except Exception as error:
-        print(error)
+    except Exception as e:
+        print(e)
         print(traceback.print_exc())
-        return "Error: " + str(error)
+        return "Error: " + str(e) + "TRACEBACK: " + traceback.print_exc()
 
 # Tool Working
 @mcp.tool()
@@ -150,50 +161,78 @@ def train_the_model() -> str:
     Returns:
         str: A message indicating how many documents were processed
     """
-    gsheet = GoogleSheetUtils(SERVICE_ACCOUNT_FILE_PATH, SPREADSHEET_ID, SHEET_NAME)
-    df = gsheet.read_range(range_name = RANGE, as_dataframe = True)
-    # Check if dataframe is empty
-    if df.empty:
-        return "No documents found"
-    
-    train_movie_rating_model(data = df)
-    return "Model trained successfully"
+    try:
+        gsheet = GoogleSheetUtils(SERVICE_ACCOUNT_FILE_PATH, SPREADSHEET_ID, SHEET_NAME)
+        df = gsheet.read_range(range_name = RANGE, as_dataframe = True)
+        # Check if dataframe is empty
+        if df.empty:
+            return "No documents found"
+        
+        train_movie_rating_model(data = df)
+        return "Model trained successfully"
+    except Exception as e:
+        print(e)
+        print(traceback.print_exc())
+        return "Error: " + str(e) + "TRACEBACK: " + traceback.print_exc()
 
 # Tool Working
 @mcp.tool()
 def rate_the_movie(movie_details_information) -> dict:
     """
-    Call this tool when the user provides the details of the movie to rate the movie.
-    Later call "rate_the_movie" tool. And the argument to the "rate_the_movie" tool is the formatted movie details.
-    
-    Instructions before you execute this tool:
-    1. Convert the movie details information to a dictionary.
-    2. The the movie details should strictly contain the following keys only.
-    3. It is okay to have no fields in the dictionary if the user does not provide any details.
-    4. Only after formatting the dictionary pass and call "rate_the_movie" tool.
-    
-    These are the keys
-    ['ID', 'Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
-       'Brief Description', 'Cast', 'Director', 'Screenplay/Writer',
-       'Production Company', 'Budget in Rupees', 'Revenue in Rupees']
+    Use this tool when the user asks to:
+    1. Rate a movie.
+    2. Decide whether to watch a specific movie based on details.
+
+    Processing Instructions:
+    -------------------------------------------------------------------
+    1. Start by extracting any available movie details from the user's input.
+    2. If key information is missing, do the following:
+        a. First, attempt to fetch the missing information by calling the tool `get_details_of_movie`.
+        b. If the tool returns incomplete or empty data, then fetch missing details from the web (IMDb, Wikipedia, TMDb, etc.).
+    3. Combine and update the data to form a **complete dictionary**.
+       - Use only these keys (exact match):
+         ['ID', 'Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
+          'Brief Description', 'Cast', 'Director', 'Screenplay/Writer',
+          'Production Company', 'Budget in Rupees', 'Revenue in Rupees']
+       - All keys must be present. If any data is unknown even after enrichment, set the value to an empty string.
+    4. Once the dictionary is fully prepared, compulsorily pass it to the tool `provide_the_reviews_for_the_movie`.
 
     Args:
-        movie_details_information (str): Information about the movie provided by the user.
-    
+        movie_details_information (str): User-provided description or partial movie data.
+
     Returns:
-        dict: The formatted movie details
+        dict: A dictionary of formatted and enriched movie details.
     """
-    return """
-    Instructions before you execute this tool:
-    1. Convert the movie details information to a dictionary.
-    2. The the movie details should strictly contain the following keys only.
-    3. It is okay to have no fields in the dictionary if the user does not provide any details.
-    4. Only after formatting the dictionary pass and call "rate_the_movie" tool.
-    
-    These are the keys
-    ['ID', 'Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
-       'Brief Description', 'Cast', 'Director', 'Screenplay/Writer',
-       'Production Company', 'Budget in Rupees', 'Revenue in Rupees', 'Embeddings']"""
+    try:
+        return  """
+    Use this tool when the user asks to:
+    1. Rate a movie.
+    2. Decide whether to watch a specific movie based on details.
+
+    Processing Instructions:
+    -------------------------------------------------------------------
+    1. Start by extracting any available movie details from the user's input.
+    2. If key information is missing, do the following:
+        a. First, attempt to fetch the missing information by calling the tool `get_details_of_movie`.
+        b. If the tool returns incomplete or empty data, then fetch missing details from the web (IMDb, Wikipedia, TMDb, etc.).
+    3. Combine and update the data to form a **complete dictionary**.
+       - Use only these keys (exact match):
+         ['ID', 'Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
+          'Brief Description', 'Cast', 'Director', 'Screenplay/Writer',
+          'Production Company', 'Budget in Rupees', 'Revenue in Rupees']
+       - All keys must be present. If any data is unknown even after enrichment, set the value to an empty string.
+    4. Once the dictionary is fully prepared, compulsorily pass it to the tool `provide_the_reviews_for_the_movie`.
+
+    Args:
+        movie_details_information (str): User-provided description or partial movie data.
+
+    Returns:
+        dict: A dictionary of formatted and enriched movie details.
+        """
+    except Exception as e:
+        print(e)
+        print(traceback.print_exc())
+        return "Error: " + str(e) + "TRACEBACK: " + traceback.print_exc()
 
 # Tool Working
 @mcp.tool()
@@ -206,26 +245,30 @@ def provide_the_reviews_for_the_movie(movie_details) -> str:
         str: A message indicating how many documents were processed
     
     """
+    try:
+        predicted_rating = predict_rating_of_movie(movie_details)
 
-    predicted_rating = predict_rating_of_movie(movie_details)
-
-    gsheet = GoogleSheetUtils(SERVICE_ACCOUNT_FILE_PATH, SPREADSHEET_ID, SHEET_NAME)
-    df = gsheet.read_range(range_name = RANGE, as_dataframe = True)
-    # Check if dataframe is empty
-    if df.empty:
-        return "No documents found"
-    
-    df['User Rating'] = df['User Rating'].astype(float)
-    rounded_rating = round(predicted_rating, 2)
-    filtered_df = df[(df['User Rating'] >= rounded_rating - 1) & (df['User Rating'] <= rounded_rating)]
-    list_of_reviews_provided_by_user = filtered_df['User Liking (words)'].tolist()
+        gsheet = GoogleSheetUtils(SERVICE_ACCOUNT_FILE_PATH, SPREADSHEET_ID, SHEET_NAME)
+        df = gsheet.read_range(range_name = RANGE, as_dataframe = True)
+        # Check if dataframe is empty
+        if df.empty:
+            return "No documents found"
+        
+        df['User Rating'] = df['User Rating'].astype(float)
+        rounded_rating = round(predicted_rating, 2)
+        filtered_df = df[(df['User Rating'] >= rounded_rating - 1) & (df['User Rating'] <= rounded_rating)]
+        list_of_reviews_provided_by_user = filtered_df['User Liking (words)'].tolist()
 
 
-    return f"""The user has not seen or rated the movie , but is considering watching it. A machine learning model has predicted that the user would rate this movie {predicted_rating} out of 10. 
-    
-    You are also given a list of past reviews by the same user for other movies that fall within a similar rating range (e.g., within ±0.5 of the predicted rating). for example: {list_of_reviews_provided_by_user}
-    
-    Based on this predicted rating and the user's review history of similar movies, determine whether the user is likely to enjoy the movie and whether they should watch it. Justify your answer clearly and briefly, referencing the users review patterns. Do not generate a generic movie review. This is a personalized recommendation, not a film critique."""
+        return f"""The user has not seen or rated the movie , but is considering watching it. A machine learning model has predicted that the user would rate this movie {predicted_rating} out of 10. 
+        
+        You are also given a list of past reviews by the same user for other movies that fall within a similar rating range (e.g., within ±0.5 of the predicted rating). for example: {list_of_reviews_provided_by_user}
+        
+        Based on this predicted rating and the user's review history of similar movies, determine whether the user is likely to enjoy the movie and whether they should watch it. Justify your answer clearly and briefly, referencing the users review patterns. Do not generate a generic movie review. This is a personalized recommendation, not a film critique."""
+    except Exception as e:
+        print(e)
+        print(traceback.print_exc())
+        return "Error: " + str(e) + "TRACEBACK: " + traceback.print_exc()
 
 @mcp.tool()
 def add_document_to_database(movie_details_information) -> dict:
@@ -235,10 +278,11 @@ def add_document_to_database(movie_details_information) -> dict:
     
     Instructions before you execute this tool:
     0. The user should provide the details on 'User Rating' and 'User Liking (words)' fields. If not then its strictly not allowed to add the details to the database and ask the user to provide the details on 'User Rating' and 'User Liking (words)' fields.
-    1. Convert the movie details information to a dictionary.
-    2. The the movie details should strictly contain the following keys only.
-    3. It is okay to have no fields in the dictionary if the user does not provide any details.
-    4. Only after formatting the dictionary pass and call "process_document_for_database" tool.
+    1. Reformat the 'User Liking (words)' into a full sentence or two that describes the user's emotional response to the movie. Avoid generic or one-word responses. For example, change "Loved it" to "I thoroughly enjoyed the film, especially the emotional storytelling and strong character arcs."
+    2. Convert the movie details information to a dictionary.
+    3. The the movie details should strictly contain the following keys only.
+    4. It is okay to have no fields in the dictionary if the user does not provide any details.
+    5. Only after formatting the dictionary pass and call "process_document_for_database" tool.
     
     These are the keys
     ['Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
@@ -272,40 +316,46 @@ def add_document_to_database(movie_details_information) -> dict:
             "Embeddings": "Embeddings" <KEEP IT EMPTY STRING>
         }
     """
-    return """
-    Instructions before you execute this tool:
-    0. The user should provide the details on 'User Rating' and 'User Liking (words)' fields. If not then its strictly not allowed to add the details to the database and ask the user to provide the details on 'User Rating' and 'User Liking (words)' fields.
-    1. Convert the movie details information to a dictionary.
-    2. The the movie details should strictly contain the following keys only.
-    3. It is okay to have no fields in the dictionary if the user does not provide any details.
-    4. Only after formatting the dictionary pass and call "process_document_for_database" tool.
-    
-    These are the keys
-    ['Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
-       'Brief Description', 'Cast', 'Director', 'Screenplay/Writer',
-       'Production Company', 'Budget in Rupees', 'Revenue in Rupees', 'User Rating', 'User Liking (words)']
-       
-    Output Format:
-    Below should be the dict movie_details. Maintain the keys in the same order as mentioned in the keys list.
-    {
-        "ID": "ID", <KEEP IT EMPTY STRING>
-        "Movie Name": "Movie Name",
-        "Year": "Year",
-        "Timing(min)": "Timing(min)",
-        "Genre": "Genre",
-        "Language": "Language",
-        "Brief Description": "Brief Description",
-        "Cast": "Cast",
-        "Director": "Director",
-        "Screenplay/Writer": "Screenplay/Writer",
-        "Production Company": "Production Company",
-        "Budget in Rupees": "Budget in Rupees",
-        "Revenue in Rupees": "Revenue in Rupees",
-        "User Liking (words)": "User Liking (words)",
-        "User Rating": "User Rating",
-        "Embeddings": "Embeddings" <KEEP IT EMPTY STRING>
-    }
-    """
+    try:
+        return """
+        Instructions before you execute this tool:
+        0. The user should provide the details on 'User Rating' and 'User Liking (words)' fields. If not then its strictly not allowed to add the details to the database and ask the user to provide the details on 'User Rating' and 'User Liking (words)' fields.
+        1. Reformat the 'User Liking (words)' into a full sentence or two that describes the user's emotional response to the movie. Avoid generic or one-word responses. For example, change "Loved it" to "I thoroughly enjoyed the film, especially the emotional storytelling and strong character arcs."
+        2. Convert the movie details information to a dictionary.
+        3. The the movie details should strictly contain the following keys only.
+        4. It is okay to have no fields in the dictionary if the user does not provide any details.
+        5. Only after formatting the dictionary pass and call "process_document_for_database" tool.
+        
+        These are the keys
+        ['Movie Name', 'Year', 'Timing(min)', 'Genre', 'Language',
+        'Brief Description', 'Cast', 'Director', 'Screenplay/Writer',
+        'Production Company', 'Budget in Rupees', 'Revenue in Rupees', 'User Rating', 'User Liking (words)']
+        
+        Output Format:
+        Below should be the dict movie_details. Maintain the keys in the same order as mentioned in the keys list.
+        {
+            "ID": "ID", <KEEP IT EMPTY STRING>
+            "Movie Name": "Movie Name",
+            "Year": "Year",
+            "Timing(min)": "Timing(min)",
+            "Genre": "Genre",
+            "Language": "Language",
+            "Brief Description": "Brief Description",
+            "Cast": "Cast",
+            "Director": "Director",
+            "Screenplay/Writer": "Screenplay/Writer",
+            "Production Company": "Production Company",
+            "Budget in Rupees": "Budget in Rupees",
+            "Revenue in Rupees": "Revenue in Rupees",
+            "User Liking (words)": "User Liking (words)",
+            "User Rating": "User Rating",
+            "Embeddings": "Embeddings" <KEEP IT EMPTY STRING>
+        }
+        """
+    except Exception as e:
+        print(e)
+        print(traceback.print_exc())
+        return "Error: " + str(e) + "TRACEBACK: " + traceback.print_exc()
 
 
 @mcp.tool()
@@ -353,23 +403,33 @@ def process_document_for_database(movie_details):
         # UUID
         unique_id = uuid.uuid4()
         movie_details['ID'] = str(unique_id)
-        row_data = [str(val) for val in movie_details.values()]
+        print("AFTER GREYWOLF: ", movie_details)
+        
+        key_order = [
+            "ID", "Movie Name", "Year", "Timing(min)", "Genre", "Language",
+            "Brief Description", "Cast", "Director", "Screenplay/Writer",
+            "Production Company", "Budget in Rupees", "Revenue in Rupees",
+            "User Liking (words)", "User Rating", "Embeddings"
+        ]
+
+        # Reorder each dictionary
+        ordered_data = {key: movie_details.get(key, None) for key in key_order}
 
         conversion_map = {
             'ID': str,
-            'Year': int,
-            'Timing(min)': float,
-            'Budget in Rupees': float,
-            'Revenue in Rupees': float,
-            'User Rating': float,
+            'Year': to_optional_int,
+            'Timing(min)': to_optional_float,
+            'Budget in Rupees': to_optional_float,
+            'Revenue in Rupees': to_optional_float,
+            'User Rating': to_optional_float,
         }
 
         # Apply conversions where needed
         row_data = [
             conversion_map.get(key, str)(value)  # convert using map or fallback to str
-            for key, value in movie_details.items()
+            for key, value in ordered_data.items()
         ]
-        
+
         gsheet.append_row(
             row_data = row_data
         )
